@@ -1,0 +1,5 @@
+PySide6-Essentials==6.10.3
+Pillow>=11,<13
+rapidocr>=3,<4
+onnxruntime>=1.20,<2
+
