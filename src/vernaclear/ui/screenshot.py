@@ -6,6 +6,7 @@ from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QKeyEvent, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from vernaclear.core.i18n import normalize_ui_language, tr
 from vernaclear.core.paths import data_dir
 
 
@@ -14,14 +15,15 @@ class ScreenSnipOverlay(QWidget):
     cancelled = Signal()
     failed = Signal(str)
 
-    def __init__(self) -> None:
+    def __init__(self, language: str = "zh") -> None:
         super().__init__(None)
+        self.locale = normalize_ui_language(language)
         self._origin = QPoint()
         self._current = QPoint()
         self._selecting = False
         self._screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         if self._screen is None:
-            raise RuntimeError("没有找到可用显示器。")
+            raise RuntimeError(tr(self.locale, "no_screen"))
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -52,7 +54,7 @@ class ScreenSnipOverlay(QWidget):
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             painter.setPen(QPen(QColor("#8B83FF"), 2))
             painter.drawRect(rect)
-            label = f" {rect.width()} × {rect.height()}  松开鼠标完成，Esc 取消 "
+            label = f" {rect.width()} × {rect.height()}  {tr(self.locale, 'snip_release')} "
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor("#171B25"))
             label_rect = QRect(rect.left(), max(8, rect.top() - 34), 260, 28)
@@ -61,7 +63,9 @@ class ScreenSnipOverlay(QWidget):
             painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, label)
         else:
             painter.setPen(QColor("#FFFFFF"))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "拖动鼠标选择需要识别的区域")
+            painter.drawText(
+                self.rect(), Qt.AlignmentFlag.AlignCenter, tr(self.locale, "snip_drag")
+            )
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -98,10 +102,10 @@ class ScreenSnipOverlay(QWidget):
         try:
             pixmap = self._screen.grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
             if pixmap.isNull():
-                raise RuntimeError("屏幕捕获失败。")
+                raise RuntimeError(tr(self.locale, "capture_failed"))
             output = data_dir() / "last-capture.png"
             if not pixmap.save(str(output), "PNG"):
-                raise RuntimeError("无法保存临时截图。")
+                raise RuntimeError(tr(self.locale, "capture_save_failed"))
             self.captured.emit(str(output))
         except Exception as error:
             self.failed.emit(str(error))

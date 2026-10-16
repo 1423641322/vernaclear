@@ -51,7 +51,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Vernaclear")
     app.setOrganizationName("Vernaclear")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion("0.2.0")
     icon_path = resource_path("icon.svg")
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))

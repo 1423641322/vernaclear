@@ -35,6 +35,7 @@ class LlmSettings:
 
 @dataclass(slots=True)
 class AppSettings:
+    ui_language: str = "zh"
     source_language: str = "auto"
     target_language: str = "zh-Hans"
     default_mode: str = "hybrid"
@@ -58,6 +59,7 @@ class SettingsStore:
             traditional["api_key"] = unprotect(traditional.get("api_key", ""))
             llm["api_key"] = unprotect(llm.get("api_key", ""))
             return AppSettings(
+                ui_language="en" if raw.get("ui_language") == "en" else "zh",
                 source_language=raw.get("source_language", "auto"),
                 target_language=raw.get("target_language", "zh-Hans"),
                 default_mode=raw.get("default_mode", "hybrid"),

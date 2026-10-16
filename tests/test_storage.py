@@ -8,6 +8,7 @@ from vernaclear.core.models import GlossaryEntry, TranslationMode, TranslationRe
 def test_settings_roundtrip_encrypts_keys(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     settings = AppSettings()
+    settings.ui_language = "en"
     settings.llm.api_key = "secret-llm-key"
     settings.traditional.api_key = "secret-traditional-key"
     store = SettingsStore(path)
@@ -16,6 +17,7 @@ def test_settings_roundtrip_encrypts_keys(tmp_path: Path) -> None:
     assert "secret-llm-key" not in raw
     assert "secret-traditional-key" not in raw
     restored = store.load()
+    assert restored.ui_language == "en"
     assert restored.llm.api_key == "secret-llm-key"
     assert restored.traditional.api_key == "secret-traditional-key"
 

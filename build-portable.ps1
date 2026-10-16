@@ -90,7 +90,9 @@ $AppRoot = Join-Path $StageRoot "app"
 New-Item -ItemType Directory -Force -Path $AppRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "src") -Destination $AppRoot -Recurse
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "run.py") -Destination $AppRoot
-Copy-Item -LiteralPath (Join-Path $ProjectRoot "portable-readme.txt") -Destination (Join-Path $StageRoot "使用说明.txt")
+Copy-Item -LiteralPath (Join-Path $ProjectRoot "README.txt") -Destination (Join-Path $StageRoot "README.txt")
+Copy-Item -LiteralPath (Join-Path $ProjectRoot "LICENSE") -Destination (Join-Path $StageRoot "LICENSE")
+Copy-Item -LiteralPath (Join-Path $ProjectRoot "THIRD_PARTY_NOTICES.md") -Destination (Join-Path $StageRoot "THIRD_PARTY_NOTICES.md")
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "packaging\Vernaclear.cmd") -Destination (Join-Path $StageRoot "Vernaclear.cmd")
 New-Item -ItemType Directory -Force -Path (Join-Path $StageRoot "config"), (Join-Path $StageRoot "data"), (Join-Path $StageRoot "logs") | Out-Null
 

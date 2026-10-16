@@ -1,8 +1,14 @@
 # Vernaclear · 语境译
 
+[![Tests](https://github.com/1423641322/vernaclear/actions/workflows/tests.yml/badge.svg)](https://github.com/1423641322/vernaclear/actions/workflows/tests.yml)
+
+[English](#english) · [下载便携版](https://github.com/1423641322/vernaclear/releases)
+
 看懂聊天里的每一种说法。
 
 Vernaclear 是面向真实聊天场景的 Windows 桌面翻译器。首个版本提供文本翻译、图片导入、框选截图 OCR、聊天缩写解释、传统翻译、大模型翻译和自动混合路由。
+
+![Vernaclear 中文界面](docs/images/vernaclear-zh.png)
 
 ## 当前功能
 
@@ -14,6 +20,7 @@ Vernaclear 是面向真实聊天场景的 Windows 桌面翻译器。首个版本
 - 根据缩写歧义自动选择传统翻译或大模型
 - 本地历史记录、个人词条和便携数据目录
 - Windows DPAPI 加密保存 API 密钥
+- 右上角按钮一键切换中英文界面，并记住选择
 
 ## 开发运行
 
@@ -57,4 +64,61 @@ API 密钥使用当前 Windows 用户的 DPAPI 加密。复制便携目录到另
 - 截图默认不保存。
 - 翻译历史保存在程序目录的 SQLite 数据库中。
 - 只有用户主动翻译时，文本才会发送给所选翻译服务。
+
+## 许可证
+
+Vernaclear 以 [GNU General Public License v3.0](LICENSE) 发布。重新分发或发布修改版时，必须遵守 GPL-3.0 的相应开源义务。打包的第三方组件仍适用各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+---
+
+## English
+
+Vernaclear is a Windows desktop translator built for real chat conversations.
+It combines local screenshot OCR, multilingual chat-abbreviation recognition,
+traditional translation services, and OpenAI-compatible language models.
+
+![Vernaclear English interface](docs/images/vernaclear-en.png)
+
+### Features
+
+- Text input, paste, translation, and copy
+- Local OCR for imported images and selected screen regions
+- Built-in Chinese, English, Japanese, and Korean chat-expression glossary
+- Microsoft Translator and DeepL integration
+- OpenAI-compatible LLM support, including local Ollama models
+- Smart routing between traditional translation and contextual LLM translation
+- Local history and personal glossary
+- Chinese/English interface toggle with a remembered preference
+- Windows DPAPI encryption for API keys
+
+### Run from source
+
+Python 3.12 is recommended:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe run.py
+```
+
+Run the tests with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+```
+
+Build the portable folder with:
+
+```powershell
+.\build-portable.ps1
+```
+
+The script creates `vernaclear-portable` in the parent directory. Its
+`Vernaclear.exe` includes the required Python runtime and local OCR models.
+
+### License
+
+Vernaclear is released under the [GNU General Public License v3.0](LICENSE).
+Bundled third-party components remain subject to their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

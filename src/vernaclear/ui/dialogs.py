@@ -24,13 +24,16 @@ from PySide6.QtWidgets import (
 
 from vernaclear.core.config import AppSettings, LlmSettings, TraditionalSettings
 from vernaclear.core.database import Database
+from vernaclear.core.i18n import normalize_ui_language, tr
 from vernaclear.core.models import GlossaryEntry
 
 
 class SettingsDialog(QDialog):
     def __init__(self, settings: AppSettings, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Vernaclear 设置")
+        self.locale = normalize_ui_language(settings.ui_language)
+        self._t = lambda key, **values: tr(self.locale, key, **values)
+        self.setWindowTitle(self._t("settings_title"))
         self.resize(720, 620)
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -41,12 +44,12 @@ class SettingsDialog(QDialog):
         self.context_size = QSpinBox()
         self.context_size.setRange(0, 30)
         self.context_size.setValue(settings.context_size)
-        general_form.addRow("携带历史消息数", self.context_size)
-        info = QLabel("API 密钥使用 Windows DPAPI 加密，只能由当前 Windows 用户解密。")
+        general_form.addRow(self._t("context_count"), self.context_size)
+        info = QLabel(self._t("privacy_note"))
         info.setWordWrap(True)
         info.setObjectName("Muted")
-        general_form.addRow("隐私说明", info)
-        tabs.addTab(general, "常规")
+        general_form.addRow(self._t("privacy"), info)
+        tabs.addTab(general, self._t("general"))
 
         traditional = QWidget()
         traditional_form = QFormLayout(traditional)
@@ -60,12 +63,12 @@ class SettingsDialog(QDialog):
         self.traditional_key = QLineEdit(settings.traditional.api_key)
         self.traditional_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.traditional_region = QLineEdit(settings.traditional.region)
-        traditional_form.addRow("服务商", self.traditional_provider)
-        traditional_form.addRow("API 地址", self.traditional_endpoint)
-        traditional_form.addRow("API 密钥", self.traditional_key)
-        traditional_form.addRow("Azure 区域（可选）", self.traditional_region)
+        traditional_form.addRow(self._t("provider"), self.traditional_provider)
+        traditional_form.addRow(self._t("api_endpoint"), self.traditional_endpoint)
+        traditional_form.addRow(self._t("api_key"), self.traditional_key)
+        traditional_form.addRow(self._t("azure_region"), self.traditional_region)
         self.traditional_provider.currentIndexChanged.connect(self._provider_changed)
-        tabs.addTab(traditional, "传统翻译")
+        tabs.addTab(traditional, self._t("traditional_tab"))
 
         llm = QWidget()
         llm_form = QFormLayout(llm)
@@ -73,7 +76,7 @@ class SettingsDialog(QDialog):
         self.llm_key = QLineEdit(settings.llm.api_key)
         self.llm_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.llm_model = QLineEdit(settings.llm.model)
-        self.llm_model.setPlaceholderText("例如 qwen3:8b 或服务商提供的模型名")
+        self.llm_model.setPlaceholderText(self._t("model_hint"))
         self.temperature = QDoubleSpinBox()
         self.temperature.setRange(0.0, 2.0)
         self.temperature.setSingleStep(0.1)
@@ -81,15 +84,17 @@ class SettingsDialog(QDialog):
         self.system_prompt = QPlainTextEdit(settings.llm.system_prompt)
         self.system_prompt.setMinimumHeight(180)
         llm_form.addRow("Base URL", self.llm_url)
-        llm_form.addRow("API 密钥（本地可空）", self.llm_key)
-        llm_form.addRow("模型", self.llm_model)
+        llm_form.addRow(self._t("local_key"), self.llm_key)
+        llm_form.addRow(self._t("model"), self.llm_model)
         llm_form.addRow("Temperature", self.temperature)
-        llm_form.addRow("系统提示词", self.system_prompt)
-        tabs.addTab(llm, "大模型")
+        llm_form.addRow(self._t("system_prompt"), self.system_prompt)
+        tabs.addTab(llm, self._t("llm_tab"))
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText(self._t("save"))
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(self._t("cancel"))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -104,6 +109,7 @@ class SettingsDialog(QDialog):
 
     def values(self, original: AppSettings) -> AppSettings:
         return AppSettings(
+            ui_language=original.ui_language,
             source_language=original.source_language,
             target_language=original.target_language,
             default_mode=original.default_mode,
@@ -126,29 +132,33 @@ class SettingsDialog(QDialog):
 
 
 class GlossaryDialog(QDialog):
-    def __init__(self, database: Database, parent=None) -> None:
+    def __init__(self, database: Database, language: str = "zh", parent=None) -> None:
         super().__init__(parent)
         self.database = database
-        self.setWindowTitle("个人词库")
+        self.locale = normalize_ui_language(language)
+        self._t = lambda key, **values: tr(self.locale, key, **values)
+        self.setWindowTitle(self._t("glossary_title"))
         self.resize(780, 520)
         layout = QVBoxLayout(self)
-        note = QLabel("个人词条会覆盖内置词库中的同名条目，可用于群聊黑话、游戏术语和人名。")
+        note = QLabel(self._t("glossary_note"))
         note.setWordWrap(True)
         note.setObjectName("Muted")
         layout.addWidget(note)
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["缩写/词语", "完整含义", "语言", "备注"])
+        self.table.setHorizontalHeaderLabels(
+            [self._t("term"), self._t("meaning"), self._t("language"), self._t("note")]
+        )
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
         controls = QHBoxLayout()
-        add_button = QPushButton("添加一行")
-        delete_button = QPushButton("删除选中")
+        add_button = QPushButton(self._t("add_row"))
+        delete_button = QPushButton(self._t("delete_selected"))
         delete_button.setObjectName("Danger")
-        save_button = QPushButton("保存词库")
+        save_button = QPushButton(self._t("save_glossary"))
         save_button.setObjectName("Primary")
-        close_button = QPushButton("关闭")
+        close_button = QPushButton(self._t("close"))
         controls.addWidget(add_button)
         controls.addWidget(delete_button)
         controls.addStretch()
@@ -201,26 +211,32 @@ class GlossaryDialog(QDialog):
                 GlossaryEntry(values[0], values[1], values[2] or "und", "personal", values[3])
             )
             saved += 1
-        QMessageBox.information(self, "个人词库", f"已保存 {saved} 个词条。")
+        QMessageBox.information(
+            self, self._t("glossary_title"), self._t("saved_entries", count=saved)
+        )
 
 
 class HistoryDialog(QDialog):
-    def __init__(self, database: Database, parent=None) -> None:
+    def __init__(self, database: Database, language: str = "zh", parent=None) -> None:
         super().__init__(parent)
         self.database = database
-        self.setWindowTitle("翻译历史")
+        self.locale = normalize_ui_language(language)
+        self._t = lambda key, **values: tr(self.locale, key, **values)
+        self.setWindowTitle(self._t("history_title"))
         self.resize(900, 560)
         layout = QVBoxLayout(self)
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["时间", "原文", "译文", "服务"])
+        self.table.setHorizontalHeaderLabels(
+            [self._t("time"), self._t("original"), self._t("translation"), self._t("service")]
+        )
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
         controls = QHBoxLayout()
-        clear_button = QPushButton("清空历史")
+        clear_button = QPushButton(self._t("clear_history"))
         clear_button.setObjectName("Danger")
-        close_button = QPushButton("关闭")
+        close_button = QPushButton(self._t("close"))
         controls.addWidget(clear_button)
         controls.addStretch()
         controls.addWidget(close_button)
@@ -241,7 +257,9 @@ class HistoryDialog(QDialog):
                 self.table.setItem(row, column, item)
 
     def _clear(self) -> None:
-        answer = QMessageBox.question(self, "清空历史", "确定清空全部本地翻译历史吗？")
+        answer = QMessageBox.question(
+            self, self._t("clear_history"), self._t("confirm_clear")
+        )
         if answer == QMessageBox.StandardButton.Yes:
             self.database.clear_history()
             self._load()

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from vernaclear.core.config import SettingsStore
 from vernaclear.core.database import Database
+from vernaclear.core.i18n import LANGUAGE_OPTIONS, MODE_OPTIONS, normalize_ui_language, tr
 from vernaclear.core.lexicon import Lexicon
 from vernaclear.core.models import TranslationMode, TranslationRequest, TranslationResult
 from vernaclear.services.ocr import OcrService
@@ -33,43 +34,24 @@ from vernaclear.ui.screenshot import ScreenSnipOverlay
 from vernaclear.ui.worker import Worker
 
 
-LANGUAGES = [
-    ("自动检测", "auto"),
-    ("简体中文", "zh-Hans"),
-    ("繁体中文", "zh-Hant"),
-    ("英语", "en"),
-    ("日语", "ja"),
-    ("韩语", "ko"),
-    ("法语", "fr"),
-    ("德语", "de"),
-    ("西班牙语", "es"),
-    ("俄语", "ru"),
-]
-
-MODES = [
-    ("智能混合", TranslationMode.HYBRID.value),
-    ("词库 + 传统翻译", TranslationMode.TRADITIONAL.value),
-    ("上下文大模型", TranslationMode.LLM.value),
-]
-
-
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Vernaclear · 语境译")
         self.resize(1180, 760)
         self.setMinimumSize(920, 620)
         self.settings_store = SettingsStore()
         self.settings = self.settings_store.load()
+        self.locale = normalize_ui_language(self.settings.ui_language)
         self.database = Database()
         self.ocr = OcrService()
         self.thread_pool = QThreadPool.globalInstance()
         self._snip_overlay: ScreenSnipOverlay | None = None
+        self._temporary_ocr_path: Path | None = None
         self._busy = False
         self._build_ui()
+        self._apply_language()
         self._restore_settings()
         self._connect_shortcuts()
-        self.statusBar().showMessage("就绪 · OCR 在本地运行，截图默认不保存到历史目录")
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -84,17 +66,19 @@ class MainWindow(QMainWindow):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(20, 14, 16, 14)
         title_column = QVBoxLayout()
-        brand = QLabel("Vernaclear  ·  语境译")
-        brand.setObjectName("Brand")
-        subtitle = QLabel("看懂聊天里的每一种说法")
-        subtitle.setObjectName("Subtitle")
-        title_column.addWidget(brand)
-        title_column.addWidget(subtitle)
+        self.brand_label = QLabel()
+        self.brand_label.setObjectName("Brand")
+        self.subtitle_label = QLabel()
+        self.subtitle_label.setObjectName("Subtitle")
+        title_column.addWidget(self.brand_label)
+        title_column.addWidget(self.subtitle_label)
         header_layout.addLayout(title_column)
         header_layout.addStretch()
-        self.history_button = QPushButton("历史")
-        self.glossary_button = QPushButton("个人词库")
-        self.settings_button = QPushButton("设置")
+        self.language_button = QPushButton()
+        self.history_button = QPushButton()
+        self.glossary_button = QPushButton()
+        self.settings_button = QPushButton()
+        header_layout.addWidget(self.language_button)
         header_layout.addWidget(self.history_button)
         header_layout.addWidget(self.glossary_button)
         header_layout.addWidget(self.settings_button)
@@ -104,23 +88,19 @@ class MainWindow(QMainWindow):
         controls.setSpacing(10)
         self.source_combo = QComboBox()
         self.target_combo = QComboBox()
-        for label, code in LANGUAGES:
-            self.source_combo.addItem(label, code)
-            if code != "auto":
-                self.target_combo.addItem(label, code)
         self.mode_combo = QComboBox()
-        for label, mode in MODES:
-            self.mode_combo.addItem(label, mode)
-        controls.addWidget(QLabel("原文"))
+        self.source_label = QLabel()
+        self.method_label = QLabel()
+        controls.addWidget(self.source_label)
         controls.addWidget(self.source_combo)
         controls.addWidget(QLabel("→"))
         controls.addWidget(self.target_combo)
         controls.addSpacing(14)
-        controls.addWidget(QLabel("翻译方式"))
+        controls.addWidget(self.method_label)
         controls.addWidget(self.mode_combo)
         controls.addStretch()
-        self.import_button = QPushButton("导入图片")
-        self.snip_button = QPushButton("框选截图  Ctrl+Shift+A")
+        self.import_button = QPushButton()
+        self.snip_button = QPushButton()
         controls.addWidget(self.import_button)
         controls.addWidget(self.snip_button)
         outer.addLayout(controls)
@@ -140,6 +120,7 @@ class MainWindow(QMainWindow):
         self.settings_button.clicked.connect(self._open_settings)
         self.glossary_button.clicked.connect(self._open_glossary)
         self.history_button.clicked.connect(self._open_history)
+        self.language_button.clicked.connect(self._toggle_language)
         self.source_combo.currentIndexChanged.connect(self._persist_ui_settings)
         self.target_combo.currentIndexChanged.connect(self._persist_ui_settings)
         self.mode_combo.currentIndexChanged.connect(self._persist_ui_settings)
@@ -150,23 +131,20 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(18, 16, 18, 16)
         heading = QHBoxLayout()
-        title = QLabel("原文 / OCR 结果")
-        title.setObjectName("SectionTitle")
-        hint = QLabel("支持粘贴真实聊天内容")
-        hint.setObjectName("Muted")
-        heading.addWidget(title)
+        self.input_title_label = QLabel()
+        self.input_title_label.setObjectName("SectionTitle")
+        self.input_hint_label = QLabel()
+        self.input_hint_label.setObjectName("Muted")
+        heading.addWidget(self.input_title_label)
         heading.addStretch()
-        heading.addWidget(hint)
+        heading.addWidget(self.input_hint_label)
         layout.addLayout(heading)
         self.input_edit = QTextEdit()
         self.input_edit.setAcceptRichText(False)
-        self.input_edit.setPlaceholderText(
-            "输入或粘贴聊天内容，例如：\nngl that build is kinda OP rn, gg!\n\n也可以点击“框选截图”或“导入图片”。"
-        )
         layout.addWidget(self.input_edit, 1)
         actions = QHBoxLayout()
-        self.clear_button = QPushButton("清空")
-        self.translate_button = QPushButton("开始翻译  Ctrl+Enter")
+        self.clear_button = QPushButton()
+        self.translate_button = QPushButton()
         self.translate_button.setObjectName("Primary")
         actions.addWidget(self.clear_button)
         actions.addStretch()
@@ -174,27 +152,80 @@ class MainWindow(QMainWindow):
         layout.addLayout(actions)
         return panel
 
+    def _t(self, key: str, **values: object) -> str:
+        return tr(self.locale, key, **values)
+
+    def _populate_choices(self) -> None:
+        source = self.source_combo.currentData() or self.settings.source_language
+        target = self.target_combo.currentData() or self.settings.target_language
+        mode = self.mode_combo.currentData() or self.settings.default_mode
+        for combo in (self.source_combo, self.target_combo, self.mode_combo):
+            combo.blockSignals(True)
+            combo.clear()
+        for code, label_key in LANGUAGE_OPTIONS:
+            self.source_combo.addItem(self._t(label_key), code)
+            if code != "auto":
+                self.target_combo.addItem(self._t(label_key), code)
+        for value, label_key in MODE_OPTIONS:
+            self.mode_combo.addItem(self._t(label_key), value)
+        self._select_data(self.source_combo, str(source))
+        self._select_data(self.target_combo, str(target))
+        self._select_data(self.mode_combo, str(mode))
+        for combo in (self.source_combo, self.target_combo, self.mode_combo):
+            combo.blockSignals(False)
+
+    def _apply_language(self) -> None:
+        self.setWindowTitle(self._t("window_title"))
+        self.brand_label.setText(self._t("brand"))
+        self.subtitle_label.setText(self._t("subtitle"))
+        self.language_button.setText(self._t("switch_language"))
+        self.history_button.setText(self._t("history"))
+        self.glossary_button.setText(self._t("glossary"))
+        self.settings_button.setText(self._t("settings"))
+        self.source_label.setText(self._t("source"))
+        self.method_label.setText(self._t("method"))
+        self.import_button.setText(self._t("import_image"))
+        self.snip_button.setText(self._t("snip"))
+        self.input_title_label.setText(self._t("input_title"))
+        self.input_hint_label.setText(self._t("input_hint"))
+        self.input_edit.setPlaceholderText(self._t("input_placeholder"))
+        self.clear_button.setText(self._t("clear"))
+        self.translate_button.setText(self._t("processing") if self._busy else self._t("translate"))
+        self.result_title_label.setText(self._t("result_title"))
+        if not self.result_edit.toPlainText():
+            self.provider_label.setText(self._t("waiting"))
+        self.result_edit.setPlaceholderText(self._t("result_placeholder"))
+        self.expressions_label.setText(self._t("expressions"))
+        self.copy_button.setText(self._t("copy"))
+        self._populate_choices()
+        self.statusBar().showMessage(self._t("ready"))
+
+    def _toggle_language(self) -> None:
+        self.locale = "en" if self.locale == "zh" else "zh"
+        self.settings.ui_language = self.locale
+        self._apply_language()
+        self._persist_ui_settings()
+
     def _build_result_panel(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("Panel")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(18, 16, 18, 16)
         heading = QHBoxLayout()
-        title = QLabel("自然译文")
-        title.setObjectName("SectionTitle")
-        self.provider_label = QLabel("等待翻译")
+        self.result_title_label = QLabel()
+        self.result_title_label.setObjectName("SectionTitle")
+        self.provider_label = QLabel()
         self.provider_label.setObjectName("ProviderLabel")
-        heading.addWidget(title)
+        heading.addWidget(self.result_title_label)
         heading.addStretch()
         heading.addWidget(self.provider_label)
         layout.addLayout(heading)
         self.result_edit = QTextEdit()
         self.result_edit.setReadOnly(True)
-        self.result_edit.setPlaceholderText("译文将在这里显示。")
         layout.addWidget(self.result_edit, 3)
-        glossary_header = QLabel("识别到的聊天表达")
-        glossary_header.setObjectName("SectionTitle")
-        layout.addWidget(glossary_header)
+        self.expressions_label = QLabel()
+        self.expressions_label.setObjectName("SectionTitle")
+        layout.addWidget(self.expressions_label)
         self.matches_list = QListWidget()
         self.matches_list.setMinimumHeight(130)
         self.matches_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -203,7 +234,7 @@ class MainWindow(QMainWindow):
         self.warning_label = QLabel("")
         self.warning_label.setObjectName("Muted")
         self.warning_label.setWordWrap(True)
-        self.copy_button = QPushButton("复制译文")
+        self.copy_button = QPushButton()
         actions.addWidget(self.warning_label, 1)
         actions.addWidget(self.copy_button)
         layout.addLayout(actions)
@@ -229,10 +260,11 @@ class MainWindow(QMainWindow):
         self.settings.source_language = str(self.source_combo.currentData())
         self.settings.target_language = str(self.target_combo.currentData())
         self.settings.default_mode = str(self.mode_combo.currentData())
+        self.settings.ui_language = self.locale
         try:
             self.settings_store.save(self.settings)
         except Exception as error:
-            self.statusBar().showMessage(f"设置保存失败：{error}", 6000)
+            self.statusBar().showMessage(self._t("save_failed", error=error), 6000)
 
     def _build_lexicon(self) -> Lexicon:
         lexicon = Lexicon.from_json()
@@ -245,7 +277,7 @@ class MainWindow(QMainWindow):
             return
         text = self.input_edit.toPlainText().strip()
         if not text:
-            QMessageBox.information(self, "需要原文", "请先输入文字、粘贴内容或进行截图识别。")
+            QMessageBox.information(self, self._t("need_source_title"), self._t("need_source"))
             return
         try:
             mode = TranslationMode(str(self.mode_combo.currentData()))
@@ -259,7 +291,7 @@ class MainWindow(QMainWindow):
             context=self.database.recent_context(self.settings.context_size),
         )
         router = TranslationRouter(self.settings, self._build_lexicon())
-        self._set_busy(True, "正在理解聊天语境并翻译…")
+        self._set_busy(True, self._t("translating"))
         worker = Worker(router.translate, request)
         worker.signals.completed.connect(self._show_result)
         worker.signals.failed.connect(self._show_error)
@@ -268,14 +300,14 @@ class MainWindow(QMainWindow):
 
     def _show_result(self, result: object) -> None:
         if not isinstance(result, TranslationResult):
-            self._show_error("翻译结果格式异常。")
+            self._show_error(self._t("bad_result"))
             return
         self.result_edit.setPlainText(result.translated)
         self.provider_label.setText(result.provider)
         self.warning_label.setText(result.warning)
         self.matches_list.clear()
         if not result.glossary_matches:
-            self.matches_list.addItem("未匹配到内置或个人缩写词条")
+            self.matches_list.addItem(self._t("no_match"))
         else:
             seen: set[tuple[str, str]] = set()
             for match in result.glossary_matches:
@@ -285,13 +317,14 @@ class MainWindow(QMainWindow):
                 seen.add(key)
                 suffix = ""
                 if match.alternatives:
-                    suffix = f"  ·  其他可能：{'；'.join(match.alternatives)}"
+                    separator = "; " if self.locale == "en" else "；"
+                    suffix = f"  ·  {self._t('alternatives', items=separator.join(match.alternatives))}"
                 if match.note:
                     suffix += f"  ·  {match.note}"
                 self.matches_list.addItem(f"{match.source}  →  {match.expansion}{suffix}")
         if self.settings.save_history:
             self.database.add_history(result)
-        self.statusBar().showMessage(f"翻译完成 · {result.provider}", 5000)
+        self.statusBar().showMessage(self._t("translated", provider=result.provider), 5000)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.warning(self, "Vernaclear", message)
@@ -302,7 +335,7 @@ class MainWindow(QMainWindow):
         self.translate_button.setDisabled(busy)
         self.import_button.setDisabled(busy)
         self.snip_button.setDisabled(busy)
-        self.translate_button.setText("处理中…" if busy else "开始翻译  Ctrl+Enter")
+        self.translate_button.setText(self._t("processing") if busy else self._t("translate"))
         if message:
             self.statusBar().showMessage(message)
 
@@ -310,13 +343,13 @@ class MainWindow(QMainWindow):
         text = self.result_edit.toPlainText()
         if text:
             QApplication.clipboard().setText(text)
-            self.statusBar().showMessage("译文已复制到剪贴板", 3000)
+            self.statusBar().showMessage(self._t("copied"), 3000)
 
     def _clear(self) -> None:
         self.input_edit.clear()
         self.result_edit.clear()
         self.matches_list.clear()
-        self.provider_label.setText("等待翻译")
+        self.provider_label.setText(self._t("waiting"))
         self.warning_label.clear()
         self.input_edit.setFocus()
 
@@ -324,10 +357,12 @@ class MainWindow(QMainWindow):
         if self._busy or self._snip_overlay is not None:
             return
         try:
-            self._snip_overlay = ScreenSnipOverlay()
-            self._snip_overlay.captured.connect(self._ocr_image)
+            self._snip_overlay = ScreenSnipOverlay(self.locale)
+            self._snip_overlay.captured.connect(self._ocr_capture)
             self._snip_overlay.failed.connect(self._show_error)
-            self._snip_overlay.cancelled.connect(lambda: self.statusBar().showMessage("已取消截图", 3000))
+            self._snip_overlay.cancelled.connect(
+                lambda: self.statusBar().showMessage(self._t("snip_cancelled"), 3000)
+            )
             self._snip_overlay.destroyed.connect(self._release_snip)
             self._snip_overlay.start()
         except Exception as error:
@@ -340,24 +375,38 @@ class MainWindow(QMainWindow):
     def _import_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "选择需要识别的图片",
+            self._t("choose_image"),
             "",
-            "图片文件 (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff)",
+            self._t("image_filter"),
         )
         if path:
             self._ocr_image(path)
 
+    def _ocr_capture(self, path: str) -> None:
+        self._temporary_ocr_path = Path(path)
+        self._ocr_image(path)
+
     def _ocr_image(self, path: str) -> None:
-        self._set_busy(True, "正在本地识别图片文字，首次加载模型可能较慢…")
+        self._set_busy(True, self._t("ocr_working"))
         worker = Worker(self.ocr.recognize, Path(path))
         worker.signals.completed.connect(self._ocr_completed)
         worker.signals.failed.connect(self._show_error)
-        worker.signals.finished.connect(lambda: self._set_busy(False))
+        worker.signals.finished.connect(self._ocr_finished)
         self.thread_pool.start(worker)
+
+    def _ocr_finished(self) -> None:
+        self._set_busy(False)
+        temporary = self._temporary_ocr_path
+        self._temporary_ocr_path = None
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _ocr_completed(self, text: object) -> None:
         self.input_edit.setPlainText(str(text))
-        self.statusBar().showMessage("OCR 完成，正在翻译…")
+        self.statusBar().showMessage(self._t("ocr_done"))
         QTimer.singleShot(0, self._translate)
 
     def _open_settings(self) -> None:
@@ -366,15 +415,15 @@ class MainWindow(QMainWindow):
             self.settings = dialog.values(self.settings)
             try:
                 self.settings_store.save(self.settings)
-                self.statusBar().showMessage("设置已保存", 4000)
+                self.statusBar().showMessage(self._t("settings_saved"), 4000)
             except Exception as error:
-                self._show_error(f"设置保存失败：{error}")
+                self._show_error(self._t("save_failed", error=error))
 
     def _open_glossary(self) -> None:
-        GlossaryDialog(self.database, self).exec()
+        GlossaryDialog(self.database, self.locale, self).exec()
 
     def _open_history(self) -> None:
-        HistoryDialog(self.database, self).exec()
+        HistoryDialog(self.database, self.locale, self).exec()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._persist_ui_settings()
